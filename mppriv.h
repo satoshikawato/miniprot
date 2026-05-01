@@ -17,7 +17,16 @@
 #define MP_PARENT_TMP_PRI (-2)
 
 #ifndef kroundup64
-#define kroundup64(x) (--(x), (x)|=(x)>>1, (x)|=(x)>>2, (x)|=(x)>>4, (x)|=(x)>>8, (x)|=(x)>>16, (x)|=(x)>>32, ++(x))
+#define kroundup64(x) do { \
+	--(x); \
+	(x) |= (x) >> 1; \
+	(x) |= (x) >> 2; \
+	(x) |= (x) >> 4; \
+	(x) |= (x) >> 8; \
+	(x) |= (x) >> 16; \
+	if (sizeof(x) > 4) (x) |= (unsigned long long)(x) >> 32; \
+	++(x); \
+} while (0)
 #endif
 
 #ifdef __cplusplus
@@ -84,6 +93,9 @@ mp_reg1_t *mp_reg_gen_from_block(void *km, const mp_idx_t *mi, int32_t n_u, cons
 
 // from format.c
 void mp_write_output(kstring_t *s, void *km, const mp_idx_t *mi, const mp_bseq1_t *seq, const mp_reg1_t *r, const mp_mapopt_t *opt, int64_t id, int32_t hit_idx);
+
+// from map.c
+int32_t mp_map_file_to_string(const mp_idx_t *idx, const char *fn, const mp_mapopt_t *opt, int n_threads, kstring_t *out);
 
 // from align.c
 void mp_align(void *km, const mp_mapopt_t *opt, const mp_idx_t *mi, int32_t len, const char *seq, mp_reg1_t *r, int32_t extl0, int32_t extr0);

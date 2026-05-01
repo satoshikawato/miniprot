@@ -29,6 +29,32 @@ void mp_tbuf_destroy(mp_tbuf_t *b)
 	free(b);
 }
 
+static int mp_append_kstring(kstring_t *dst, const char *src, size_t len)
+{
+	char *p;
+	size_t needed, new_m;
+	if (dst == 0 || src == 0 || len == 0) return 0;
+	needed = dst->l + len + 1;
+	if (needed > dst->m) {
+		new_m = dst->m? dst->m : 16;
+		while (new_m < needed)
+			new_m += (new_m >> 1) + 16;
+		p = (char*)realloc(dst->s, new_m);
+		if (p == 0) return -1;
+		dst->s = p, dst->m = new_m;
+	}
+	memcpy(dst->s + dst->l, src, len);
+	dst->l += len;
+	dst->s[dst->l] = 0;
+	return 0;
+}
+
+static void mp_emit_output(kstring_t *out, const kstring_t *tmp)
+{
+	if (out) mp_append_kstring(out, tmp->s, tmp->l);
+	else fwrite(tmp->s, 1, tmp->l, stdout);
+}
+
 static void mp_refine_reg(void *km, const mp_idx_t *mi, const mp_mapopt_t *opt, const char *aa, int32_t l_aa, mp_reg1_t *r, int32_t extl, int32_t extr)
 {
 	const mp_idxopt_t *io = &mi->opt;
@@ -250,6 +276,7 @@ typedef struct {
 	mp_bseq_file_t *fp;
 	const mp_idx_t *mi;
 	kstring_t str;
+	kstring_t *out;
 } pipeline_t;
 
 typedef struct {
@@ -304,12 +331,12 @@ static void *worker_pipeline(void *shared, int step, void *in)
 				if (sc <= 0 || sc < (double)best_sc * p->opt->out_sim) continue;
 				if (r->qe - r->qs < (double)s->seq[i].l_seq * p->opt->out_cov) continue;
 				mp_write_output(&p->str, 0, p->mi, &s->seq[i], r, p->opt, ++p->id, j + 1);
-				fwrite(p->str.s, 1, p->str.l, stdout);
+				mp_emit_output(p->out, &p->str);
 				++n_out;
 			}
 			if (n_out == 0) {
 				mp_write_output(&p->str, 0, p->mi, &s->seq[i], 0, p->opt, 0, 0);
-				fwrite(p->str.s, 1, p->str.l, stdout);
+				mp_emit_output(p->out, &p->str);
 			}
 			for (j = 0; j < s->n_reg[i]; ++j) {
 				free(s->reg[i][j].feat);
@@ -339,5 +366,58 @@ int32_t mp_map_file(const mp_idx_t *idx, const char *fn, const mp_mapopt_t *opt,
 	kt_pipeline(2, worker_pipeline, &pl, 3);
 	free(pl.str.s);
 	mp_bseq_close(pl.fp);
+	return 0;
+}
+
+int32_t mp_map_file_to_string(const mp_idx_t *idx, const char *fn, const mp_mapopt_t *opt, int n_threads, kstring_t *out)
+{
+	mp_bseq_file_t *fp;
+	mp_tbuf_t *buf;
+	kstring_t str = {0,0,0};
+	mp_bseq1_t *seq;
+	int64_t id = 0;
+	int32_t i, j, n_seq;
+	(void)n_threads;
+
+	if (out == 0) return -1;
+	fp = mp_bseq_open(fn);
+	if (fp == 0) return -1;
+	buf = mp_tbuf_init();
+	if (opt->flag & MP_F_GFF)
+		mp_append_kstring(out, "##gff-version 3\n", sizeof("##gff-version 3\n") - 1);
+
+	while ((seq = mp_bseq_read(fp, opt->mini_batch_size, 0, &n_seq)) != 0) {
+		for (i = 0; i < n_seq; ++i) {
+			int32_t n_reg = 0, best_sc = -1, n_out = 0;
+			mp_reg1_t *reg = mp_map(idx, seq[i].l_seq, seq[i].seq, &n_reg, buf, opt, seq[i].name);
+			if (n_reg > 0)
+				best_sc = reg[0].p? reg[0].p->dp_max : reg[0].chn_sc;
+			for (j = 0; j < n_reg && j < opt->out_n; ++j) {
+				const mp_reg1_t *r = &reg[j];
+				int32_t sc = r->p? r->p->dp_max : r->chn_sc;
+				if (sc <= 0 || sc < (double)best_sc * opt->out_sim) continue;
+				if (r->qe - r->qs < (double)seq[i].l_seq * opt->out_cov) continue;
+				mp_write_output(&str, 0, idx, &seq[i], r, opt, ++id, j + 1);
+				mp_emit_output(out, &str);
+				++n_out;
+			}
+			if (n_out == 0) {
+				mp_write_output(&str, 0, idx, &seq[i], 0, opt, 0, 0);
+				mp_emit_output(out, &str);
+			}
+			for (j = 0; j < n_reg; ++j) {
+				free(reg[j].feat);
+				free(reg[j].p);
+			}
+			free(reg);
+			free(seq[i].seq); free(seq[i].name);
+			if (seq[i].comment) free(seq[i].comment);
+		}
+		free(seq);
+	}
+
+	free(str.s);
+	mp_tbuf_destroy(buf);
+	mp_bseq_close(fp);
 	return 0;
 }

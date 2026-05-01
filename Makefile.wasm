@@ -1,0 +1,36 @@
+EMCC ?= emcc
+
+WEB_DIR ?= web/dist
+GANFLU_MODULE ?= $(WEB_DIR)/miniprot-ganflu.mjs
+
+MINIPROT_CORE_SRCS = \
+	kalloc.c kthread.c nasw-sse.c nasw-tab.c sys.c misc.c options.c ntseq.c sketch.c \
+	index.c bseq.c chain.c hit.c format.c map.c align.c
+
+GANFLU_WEB_SRCS = $(MINIPROT_CORE_SRCS) web_ganflu.c
+
+GANFLU_EXPORTS = _miniprot_web_alloc,_miniprot_web_dealloc,_miniprot_ganflu_run,_miniprot_ganflu_result_ptr,_miniprot_ganflu_result_len,_miniprot_ganflu_error_ptr,_miniprot_ganflu_error_len,_miniprot_ganflu_clear
+
+WASM_CFLAGS ?= -std=c99 -O3 -Wall -msimd128 -msse2 -include emmintrin.h
+WASM_LDFLAGS ?= \
+	-sUSE_ZLIB=1 \
+	-sALLOW_MEMORY_GROWTH=1 \
+	-sMODULARIZE=1 \
+	-sEXPORT_ES6=1 \
+	-sENVIRONMENT=web,worker \
+	-sFORCE_FILESYSTEM=1 \
+	-sINVOKE_RUN=0 \
+	-sEXPORTED_FUNCTIONS=$(GANFLU_EXPORTS)
+
+.PHONY: ganflu-wasm clean-ganflu-wasm
+
+ganflu-wasm: $(GANFLU_MODULE)
+
+$(WEB_DIR):
+	mkdir -p $@
+
+$(GANFLU_MODULE): $(GANFLU_WEB_SRCS) | $(WEB_DIR)
+	$(EMCC) $(WASM_CFLAGS) -o $@ $(GANFLU_WEB_SRCS) $(WASM_LDFLAGS) -lm
+
+clean-ganflu-wasm:
+	rm -f $(WEB_DIR)/miniprot-ganflu.mjs $(WEB_DIR)/miniprot-ganflu.wasm

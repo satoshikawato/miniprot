@@ -95,7 +95,16 @@ typedef struct __kstring_t {
 #endif
 
 #ifndef kroundup64
-#define kroundup64(x) (--(x), (x)|=(x)>>1, (x)|=(x)>>2, (x)|=(x)>>4, (x)|=(x)>>8, (x)|=(x)>>16, (x)|=(x)>>32, ++(x))
+#define kroundup64(x) do { \
+	--(x); \
+	(x) |= (x) >> 1; \
+	(x) |= (x) >> 2; \
+	(x) |= (x) >> 4; \
+	(x) |= (x) >> 8; \
+	(x) |= (x) >> 16; \
+	if (sizeof(x) > 4) (x) |= (unsigned long long)(x) >> 32; \
+	++(x); \
+} while (0)
 #endif
 
 #define __KS_GETUNTIL(SCOPE, __read) \

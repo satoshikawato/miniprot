@@ -1,4 +1,5 @@
 .*.swp
+.codex
 *.o
 *.a
 Makefile.bak
