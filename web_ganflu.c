@@ -91,7 +91,10 @@ MP_WEB_EXPORT int32_t miniprot_ganflu_run(
 	const uint8_t *protein_fasta,
 	int32_t protein_len,
 	const char *prefix,
-	int32_t intron_open_penalty)
+	int32_t intron_open_penalty,
+	int32_t best_n,
+	float out_sim,
+	float pri_ratio)
 {
 	static const char *genome_path = "/miniprot_ganflu_genome.fa";
 	static const char *protein_path = "/miniprot_ganflu_proteins.faa";
@@ -120,6 +123,13 @@ MP_WEB_EXPORT int32_t miniprot_ganflu_run(
 	mo.flag |= MP_F_GFF;
 	mo.gff_prefix = prefix && prefix[0]? prefix : "MP";
 	mo.io = intron_open_penalty > 0? intron_open_penalty : 15;
+	/* Missing trailing JS/Wasm float args arrive as NaN; keep old callers on defaults. */
+	if (best_n != 0 || out_sim == out_sim || pri_ratio == pri_ratio)
+		mo.best_n = best_n;
+	if (out_sim == out_sim)
+		mo.out_sim = out_sim;
+	if (pri_ratio == pri_ratio)
+		mo.pri_ratio = pri_ratio;
 	if (mp_mapopt_check(&mo) < 0) {
 		web_set_error("invalid miniprot mapping options");
 		return 2;
